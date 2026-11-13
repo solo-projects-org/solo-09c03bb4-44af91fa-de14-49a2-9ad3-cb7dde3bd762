@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>罕见病群组合计发布核查</title>
+<style>
+  :root { --border:#d0d7de; --muted:#656d76; --red:#cf222e; --green:#1a7f37; --amber:#9a6700; --blue:#0969da; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif; color:#1f2328; background:#f6f8fa; }
+  header { background:#0d1117; color:#fff; padding:18px 28px; }
+  header h1 { margin:0 0 6px; font-size:20px; }
+  header p { margin:0; color:#9da7b3; font-size:13px; }
+  main { max-width:1060px; margin:24px auto; padding:0 20px; display:grid; gap:20px; }
+  .card { background:#fff; border:1px solid var(--border); border-radius:10px; padding:20px; }
+  .card h2 { margin:0 0 14px; font-size:16px; }
+  .muted { color:var(--muted); font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { border:1px solid var(--border); padding:8px 10px; text-align:left; }
+  th { background:#f6f8fa; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; }
+  .badge.secret { background:#ffebe9; color:var(--red); border:1px solid #ff818266; }
+  .badge.open { background:#dafbe1; color:var(--green); border:1px solid #4ac26b66; }
+  .group-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+  .group-item { border:1px solid var(--border); border-radius:8px; padding:10px 12px; cursor:pointer; display:flex; gap:8px; align-items:center; }
+  .group-item input { margin:0; }
+  .group-item.secret { background:#fff8f8; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+  button { font-size:14px; padding:8px 18px; border-radius:8px; border:1px solid var(--border); background:#f6f8fa; cursor:pointer; }
+  button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .result { margin-top:14px; padding:12px 14px; border-radius:8px; font-size:14px; white-space:pre-wrap; display:none; }
+  .result.ok { display:block; background:#dafbe1; border:1px solid #4ac26b66; color:var(--green); }
+  .result.err { display:block; background:#ffebe9; border:1px solid #ff818266; color:var(--red); }
+  .result.warn { display:block; background:#fff8c5; border:1px solid #d4a72c66; color:var(--amber); }
+  .hist-pub { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:14px; }
+  .hist-pub .meta { color:var(--muted); font-size:12px; margin-top:4px; }
+  .hidden { display:none !important; }
+  code { background:#eff1f3; padding:1px 5px; border-radius:4px; font-size:12px; }
+  input[type=file] { font-size:13px; }
+  .total { font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>罕见病人群组合计发布核查系统</h1>
+  <p>总人数公开；真实人数 1～4 的组为保密组。每次申请仅依据「总人数 + 历次已公布合计 + 本次合计」建立整数约束，任一保密组在全部可行底表中人数相同即拒绝发布。</p>
+</header>
+
+<main>
+  <section class="card" id="uploadCard">
+    <h2>1. 上传底表 CSV（首次上传后固定）</h2>
+    <p class="muted">格式：首行表头 <code>group,count</code>，2～16 个唯一组名，人数为 0～1000 的整数。样例见仓库 <code>sample/sample_groups.csv</code>。</p>
+    <div class="toolbar">
+      <input type="file" id="csvFile" accept=".csv,text/csv" />
+      <button class="primary" id="uploadBtn">上传并固定底表</button>
+    </div>
+    <div class="result" id="uploadResult"></div>
+  </section>
+
+  <section class="card hidden" id="baseCard">
+    <h2>2. 底表（保密组人数仅服务端可见，界面只标记是否保密）</h2>
+    <p class="muted">公开总人数：<span class="total" id="totalPop"></span> 人</p>
+    <table>
+      <thead><tr><th>组名</th><th>人数</th><th>密级</th></tr></thead>
+      <tbody id="baseRows"></tbody>
+    </table>
+    <div class="toolbar">
+      <button id="resetBtn" title="演示用：清空底表与发布历史">重置演示数据</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="publishCard">
+    <h2>3. 勾选组名申请公布合计</h2>
+    <div class="group-grid" id="groupGrid"></div>
+    <div class="toolbar">
+      <button class="primary" id="publishBtn">提交发布申请</button>
+      <span class="muted" id="selectionHint">未选择任何组</span>
+    </div>
+    <div class="result" id="publishResult"></div>
+  </section>
+
+  <section class="card hidden" id="historyCard">
+    <h2>4. 发布历史（按实际发布次序累计参与核查）</h2>
+    <div id="historyList"><p class="muted">暂无已发布合计。</p></div>
+  </section>
+</main>
+
+<script>
+let state = { initialized:false, base_table:null, publications:[] };
+
+const $ = (id) => document.getElementById(id);
+
+function showResult(el, kind, text) {
+  el.className = "result " + kind;
+  el.textContent = text;
+}
+function clearResult(el) { el.className = "result"; el.textContent = ""; }
+
+async function refresh() {
+  const r = await fetch("/api/state");
+  state = await r.json();
+  render();
+}
+
+function render() {
+  const hasBase = state.initialized;
+  $("baseCard").classList.toggle("hidden", !hasBase);
+  $("publishCard").classList.toggle("hidden", !hasBase);
+  $("historyCard").classList.toggle("hidden", !hasBase);
+  $("uploadBtn").disabled = hasBase;
+  $("csvFile").disabled = hasBase;
+  if (!hasBase) return;
+
+  const bt = state.base_table;
+  $("totalPop").textContent = bt.total;
+  $("baseRows").innerHTML = bt.groups.map(g => `
+    <tr>
+      <td>${escapeHtml(g.name)}</td>
+      <td>${g.count}</td>
+      <td>${g.sensitive
+        ? '<span class="badge secret">保密（1～4 人）</span>'
+        : '<span class="badge open">公开组</span>'}</td>
+    </tr>`).join("");
+
+  $("groupGrid").innerHTML = bt.groups.map(g => `
+    <label class="group-item ${g.sensitive ? "secret" : ""}">
+      <input type="checkbox" name="grp" value="${escapeAttr(g.name)}" />
+      <span>${escapeHtml(g.name)}</span>
+      ${g.sensitive ? '<span class="badge secret">保密</span>' : ""}
+    </label>`).join("");
+  updateHint();
+
+  const pubs = state.publications;
+  $("historyList").innerHTML = pubs.length === 0
+    ? '<p class="muted">暂无已发布合计。</p>'
+    : pubs.map((p, i) => `
+      <div class="hist-pub">
+        <div>第 ${i + 1} 次发布 · 合计 <strong>${p.aggregate}</strong> 人 · 组：${p.groups.map(escapeHtml).join("、")}</div>
+        <div class="meta">#${p.id} · ${new Date(p.created_at).toLocaleString()}</div>
+      </div>`).join("");
+}
+
+function selectedGroups() {
+  return [...document.querySelectorAll('input[name="grp"]:checked')].map(c => c.value);
+}
+function updateHint() {
+  const n = selectedGroups().length;
+  $("selectionHint").textContent = n === 0 ? "未选择任何组" : `已选择 ${n} 个组（合计由服务端计算）`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+
+$("uploadBtn").addEventListener("click", async () => {
+  const f = $("csvFile").files[0];
+  if (!f) { showResult($("uploadResult"), "warn", "请先选择 CSV 文件。"); return; }
+  const fd = new FormData(); fd.append("file", f);
+  try {
+    const r = await fetch("/api/upload", { method:"POST", body: fd });
+    const data = await r.json();
+    if (r.ok) { showResult($("uploadResult"), "ok", "底表已固定：" + data.base_table.groups.length + " 个组，总人数 " + data.base_table.total + "。"); await refresh(); }
+    else showResult($("uploadResult"), "err", "上传失败：" + (data.detail || r.status));
+  } catch (e) { showResult($("uploadResult"), "err", "请求失败：" + e); }
+});
+
+$("publishBtn").addEventListener("click", async () => {
+  const groups = selectedGroups();
+  if (groups.length === 0) { showResult($("publishResult"), "warn", "请至少勾选一个组。"); return; }
+  try {
+    const r = await fetch("/api/publish", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ groups })
+    });
+    const data = await r.json();
+    if (r.ok) {
+      const p = data.publication;
+      showResult($("publishResult"), "ok", `通过核查，已发布合计 ${p.aggregate}（历史第 ${data.publications.length} 条）。`);
+      await refresh();
+    } else if (r.status === 422) {
+      showResult($("publishResult"), "err", "已拒绝发布，历史不变。\n" + data.detail);
+    } else if (r.status === 409 && r.headers.get("X-Disclosure-Result") === "inconclusive") {
+      showResult($("publishResult"), "warn", "求解无定论，本次不予发布，历史不变。\n" + data.detail);
+    } else {
+      showResult($("publishResult"), "err", "申请未受理：" + (data.detail || r.status));
+    }
+  } catch (e) { showResult($("publishResult"), "err", "请求失败：" + e); }
+});
+
+$("resetBtn").addEventListener("click", async () => {
+  if (!confirm("确认清空底表与全部发布历史？")) return;
+  await fetch("/api/reset", { method:"POST" });
+  clearResult($("uploadResult")); clearResult($("publishResult"));
+  $("csvFile").value = "";
+  await refresh();
+});
+
+document.addEventListener("change", (e) => { if (e.target.name === "grp") updateHint(); });
+refresh();
+</script>
+</body>
+</html>

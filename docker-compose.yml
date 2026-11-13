@@ -1,0 +1,17 @@
+services:
+  rare-disclosure:
+    build: .
+    image: rare-disclosure-check:latest
+    container_name: rare-disclosure-check
+    ports:
+      - "8000:8000"
+    volumes:
+      - rare_data:/data
+      # 样例 CSV 挂进容器便于取阅（不影响应用逻辑）
+      - ./sample:/sample:ro
+    environment:
+      APP_DB_PATH: /data/rare.db
+    restart: unless-stopped
+
+volumes:
+  rare_data:
