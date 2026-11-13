@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+{% if message %}
+<div class="{{ message_class }}">{{ message }}</div>
+{% endif %}
+
+<h2>底表（已固定）</h2>
+<p>总人数（公开）：<strong>{{ total }}</strong> 人。
+保密规则：实际人数为 {{ protected_lo }}～{{ protected_hi }} 人的组为保密组，公布合计不得使其人数被唯一确定。</p>
+<table>
+  <tr><th>组名</th><th>实际人数</th><th>保密</th></tr>
+  {% for name, count in base %}
+  <tr>
+    <td>{{ name }}</td>
+    <td>{{ count }}</td>
+    <td>{% if protected_lo <= count <= protected_hi %}<span class="badge">保密</span>{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>申请公布合计</h2>
+<form method="post" action="/publish">
+  <p>
+  {% for name, count in base %}
+    <label class="grp"><input type="checkbox" name="selected" value="{{ name }}"> {{ name }}</label>
+  {% endfor %}
+  </p>
+  <button type="submit">核查并公布所选组合计</button>
+  <p class="muted">核查通过才会写入发布历史；拒绝、求解无定论或保存失败时历史不变。</p>
+</form>
+
+<h2>发布历史</h2>
+{% if history %}
+<table>
+  <tr><th>#</th><th>公布的组</th><th>合计（人）</th><th>时间 (UTC)</th></tr>
+  {% for h in history %}
+  <tr><td>{{ h.id }}</td><td>{{ h.groups | join("、") }}</td><td>{{ h.total }}</td><td>{{ h.created_at }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">暂无发布记录。</p>
+{% endif %}
+{% endblock %}

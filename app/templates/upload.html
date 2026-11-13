@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+{% if message %}
+<div class="err">{{ message }}</div>
+{% endif %}
+
+<h2>首次上传 CSV 固定底表</h2>
+<p>CSV 需含表头 <code>group,count</code>：2～16 个唯一组名，各组人数为 0～1000 的整数。
+<strong>上传成功后底表即固定，不可再更改。</strong></p>
+<form method="post" action="/upload" enctype="multipart/form-data">
+  <p><input type="file" name="file" accept=".csv,text/csv" required></p>
+  <button type="submit">上传并固定底表</button>
+</form>
+<p class="muted">示例：仓库根目录的 <code>sample.csv</code> 可演示“组合泄露”。</p>
+{% endblock %}

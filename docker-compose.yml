@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - app-data:/data   # SQLite 底表与发布历史持久化，重启沿用
+    restart: unless-stopped
+
+volumes:
+  app-data:
