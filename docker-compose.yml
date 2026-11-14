@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    image: rare-disease-leak-check:latest
+    container_name: rare-disease-leak-check
+    ports:
+      - "8000:8000"
+    environment:
+      APP_DB_PATH: /data/app.db
+    volumes:
+      - leak-check-data:/data
+    restart: unless-stopped
+
+volumes:
+  leak-check-data:

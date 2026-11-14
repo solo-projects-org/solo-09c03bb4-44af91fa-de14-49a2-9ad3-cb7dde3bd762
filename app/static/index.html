@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>群组合计发布 · 组合泄露核查</title>
+<style>
+  :root { --bg:#f5f7fa; --card:#fff; --line:#d9dee7; --ink:#1f2933; --muted:#6b7280;
+          --blue:#2563eb; --red:#dc2626; --green:#15803d; --amber:#b45309; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
+         background:var(--bg); color:var(--ink); line-height:1.55; }
+  header { background:#111827; color:#fff; padding:18px 28px; }
+  header h1 { margin:0 0 4px; font-size:20px; }
+  header p { margin:0; color:#9ca3af; font-size:13px; }
+  main { max-width:1080px; margin:24px auto; padding:0 16px; display:grid; gap:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; }
+  .card h2 { margin:0 0 12px; font-size:16px; }
+  .muted { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; }
+  .tag-secret { background:#fee2e2; color:var(--red); }
+  .tag-open { background:#dcfce7; color:var(--green); }
+  .group-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; margin:12px 0; }
+  .group-item { display:flex; align-items:center; gap:8px; border:1px solid var(--line);
+                border-radius:8px; padding:10px 12px; cursor:pointer; user-select:none; }
+  .group-item input { accent-color:var(--blue); width:16px; height:16px; }
+  .group-item.secret { border-color:#fecaca; background:#fff7f7; }
+  button { border:0; border-radius:8px; padding:9px 18px; font-size:14px; cursor:pointer; }
+  .btn-primary { background:var(--blue); color:#fff; }
+  .btn-primary:disabled { background:#93b4f5; cursor:not-allowed; }
+  .btn-ghost { background:#eef2f7; color:var(--ink); }
+  .alert { border-radius:8px; padding:12px 14px; font-size:14px; margin-top:12px; white-space:pre-wrap; }
+  .alert-error { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+  .alert-ok { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
+  .alert-warn { background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+  code { background:#f1f5f9; padding:1px 6px; border-radius:4px; font-size:12px; }
+  .demo-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .pill { font-size:12px; border:1px dashed var(--line); background:#fafbfc; border-radius:999px;
+          padding:4px 10px; cursor:pointer; }
+  .empty { color:var(--muted); font-size:13px; padding:14px 0; }
+  .sum-line { font-size:14px; margin:10px 0; }
+  .sum-line b { font-size:18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>罕见病人群组合计发布 · 组合泄露核查</h1>
+  <p>各组人数视为未知非负整数，仅以公开总人数、历次已公布合计与本次合计建立约束；
+     任一保密组（真实 1～4 人）在全部可行整数底表中取值唯一即拒绝发布。</p>
+</header>
+
+<main>
+  <section class="card" id="upload-card">
+    <h2>1. 上传底表 CSV（首次上传后固定，重启沿用）</h2>
+    <p class="muted">CSV 需含表头与两列，例如 <code>group,count</code>；2～16 个唯一组名，人数为 0～1000 的整数。</p>
+    <input type="file" id="csv-file" accept=".csv,text/csv" />
+    <div style="margin-top:10px">
+      <button class="btn-primary" id="upload-btn">上传并固定底表</button>
+    </div>
+    <div id="upload-msg"></div>
+  </section>
+
+  <section class="card" id="base-card" hidden>
+    <h2>2. 底表与保密标记</h2>
+    <p class="muted">总人数视为公开；标记为“保密”的组真实人数在 1～4 之间，网页仅对数据员展示，外部发布模型不含此信息。</p>
+    <table>
+      <thead><tr><th>组名</th><th>真实人数（仅数据员可见）</th><th>保密状态</th></tr></thead>
+      <tbody id="base-tbody"></tbody>
+    </table>
+    <p class="sum-line">公开总人数：<b id="total-val"></b></p>
+  </section>
+
+  <section class="card" id="publish-card" hidden>
+    <h2>3. 勾选组并申请公布合计</h2>
+    <div class="group-grid" id="group-grid"></div>
+    <p class="sum-line">本次申请合计（按底表计算）：<b id="current-sum">0</b></p>
+    <button class="btn-primary" id="publish-btn">提交发布申请</button>
+    <div class="demo-row">
+      <span class="muted" style="align-self:center">演示组合（点击填充勾选）：</span>
+      <span class="pill" data-groups='["B","C"]'>① B+C（可发布，合计 30）</span>
+      <span class="pill" data-groups='["A","C"]'>② A+C（可发布，合计 22）</span>
+      <span class="pill" data-groups='["A","B"]'>③ A+B（联立①②后泄露 A，被拒）</span>
+      <span class="pill" data-groups='["A"]'>备选：只发 A（直接被拒）</span>
+    </div>
+    <div id="publish-msg"></div>
+  </section>
+
+  <section class="card" id="history-card" hidden>
+    <h2>4. 发布历史（按实际发布次序）</h2>
+    <table>
+      <thead><tr><th>#</th><th>发布时间</th><th>选中组</th><th>公布合计</th></tr></thead>
+      <tbody id="history-tbody"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentState = null;
+
+function showMsg(el, kind, text) {
+  el.innerHTML = `<div class="alert alert-${kind}">${text}</div>`;
+}
+function clearMsg(el) { el.innerHTML = ""; }
+
+async function refresh() {
+  const res = await fetch("/api/state");
+  const state = await res.json();
+  currentState = state;
+  if (!state.initialized) {
+    $("base-card").hidden = true; $("publish-card").hidden = true; $("history-card").hidden = true;
+    return;
+  }
+  $("base-card").hidden = false; $("publish-card").hidden = false; $("history-card").hidden = false;
+  $("total-val").textContent = state.total;
+
+  $("base-tbody").innerHTML = state.groups.map(g =>
+    `<tr><td>${g.name}</td><td>${g.size}</td>
+     <td><span class="tag ${g.secret ? "tag-secret" : "tag-open"}">${g.secret ? "保密（1～4 人）" : "非保密"}</span></td></tr>`
+  ).join("");
+
+  const grid = $("group-grid");
+  grid.innerHTML = state.groups.map(g =>
+    `<label class="group-item ${g.secret ? "secret" : ""}">
+       <input type="checkbox" name="grp" value="${g.name}">
+       <span>${g.name}${g.secret ? ' <span class="tag tag-secret">保密</span>' : ""}</span>
+     </label>`).join("");
+  grid.querySelectorAll("input").forEach(cb => cb.addEventListener("change", updateSum));
+
+  const tbody = $("history-tbody");
+  if (state.history.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">暂无发布记录</td></tr>`;
+  } else {
+    tbody.innerHTML = state.history.map((h, i) =>
+      `<tr><td>${i + 1}</td><td>${h.created_at}</td>
+       <td>${h.selected_groups.join("、")}</td><td>${h.published_total}</td></tr>`).join("");
+  }
+}
+
+function selectedGroups() {
+  return [...document.querySelectorAll('input[name="grp"]:checked')].map(cb => cb.value);
+}
+function updateSum() {
+  if (!currentState) return;
+  const sizeOf = Object.fromEntries(currentState.groups.map(g => [g.name, g.size]));
+  const total = selectedGroups().reduce((acc, name) => acc + sizeOf[name], 0);
+  $("current-sum").textContent = total;
+}
+
+document.querySelectorAll(".pill").forEach(pill => {
+  pill.addEventListener("click", () => {
+    const wanted = JSON.parse(pill.dataset.groups);
+    document.querySelectorAll('input[name="grp"]').forEach(cb => {
+      cb.checked = wanted.includes(cb.value);
+    });
+    updateSum();
+  });
+});
+
+$("upload-btn").addEventListener("click", async () => {
+  const input = $("csv-file");
+  clearMsg($("upload-msg"));
+  if (!input.files.length) { showMsg($("upload-msg"), "warn", "请先选择 CSV 文件"); return; }
+  const fd = new FormData();
+  fd.append("file", input.files[0]);
+  const res = await fetch("/api/upload", { method: "POST", body: fd });
+  const data = await res.json();
+  if (!res.ok) { showMsg($("upload-msg"), "error", data.detail || "上传失败"); return; }
+  showMsg($("upload-msg"), "ok", "底表已固定。");
+  await refresh();
+});
+
+$("publish-btn").addEventListener("click", async () => {
+  clearMsg($("publish-msg"));
+  const groups = selectedGroups();
+  if (!groups.length) { showMsg($("publish-msg"), "warn", "请至少勾选一个组"); return; }
+  const res = await fetch("/api/publish", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groups })
+  });
+  const data = await res.json();
+  if (res.status === 422 && data.leaked_groups) {
+    showMsg($("publish-msg"), "error",
+      `发布被拒绝：以下保密组的人数在全部可行整数底表中都相同，会泄露小组人数：\n` +
+      data.leaked_groups.map(g => `• ${g}`).join("\n") +
+      `\n本次合计未发布，发布历史保持不变。`);
+  } else if (!res.ok) {
+    showMsg($("publish-msg"), "error", data.detail || `请求失败（HTTP ${res.status}），本次未发布`);
+  } else {
+    showMsg($("publish-msg"), "ok",
+      `已接受发布，合计 = ${data.publication.published_total}，记录已写入发布历史。`);
+  }
+  await refresh();
+});
+
+refresh();
+</script>
+</body>
+</html>
